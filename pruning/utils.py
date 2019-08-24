@@ -217,6 +217,73 @@ def test(model, loader, loss_fn):
     
     return acc, test_loss/len(loader.dataset)
 
+def iterative_multi_pruning(model, pruner, criterion,
+                            data_loaders, setup):
+    '''Takes pruner and model and iteratively prunes
+    '''
+    pruning_perc = setup["pruning_perc"]
+    #optimizers = setup["optimizers"]
+    optimizer = setup["optimizers"]
+    l_rates = setup["learning_rates"]
+    retrain_epochs = setup["retrain_epochs"]
+    pruning_rounds = setup["pruning_rounds"]
+
+    for r, (prune_ratio, lr, epochs)  in enumerate(zip(pruning_perc,
+                                                       l_rates,
+                                                       retrain_epochs)):
+        print("--- Pruning Round: {}/{} ---".format(r, pruning_rounds))
+        pruned_model = one_shot_multi_pruning(model, pruner, criterion, prune_ratio,
+                                              optimizer, lr, epochs, data_loaders)
+        model = pruned_model
+        pruner.print_mask()
+    return(model)
+
+def one_shot_multi_pruning(model, pruner, criterion_list, pruning_perc,
+                           optim_name, lr, epochs, data_loaders):
+    
+    train_loader = data_loaders["train"]
+    val_loader = data_loaders["val"]
+    test_loader = data_loaders["test"]
+
+    # prune weights
+    masks = pruner.pruning(pruning_perc)
+    model = pruner.model
+    print("--- {}% parameters pruned ---".format(pruning_perc))
+    _, _ = test_multi(model, test_loader, criterion_list)
+    pruner.prune_rate()
+
+    # Retraining
+    # Criterion/Optimizer/Pruner
+    criterion = nn.CrossEntropyLoss()
+    for loss in criterion_list:
+        loss = criterion
+
+    #get trainable parameters 
+    #comment: model.parameters should also work!!!
+    parameters = [params for params in model.parameters() if
+                  params.requires_grad==True]
+    
+    if optim_name=="Adam":
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    else:
+        raise ValueError()
+    
+    print("--- Re-Training DNN ---")
+    train_losses, val_losses = \
+        train_eval_multi(model, criterion_list, optimizer,
+                         epochs, train_loader, val_loader)
+    
+    for i, (val_loss, train_loss) in enumerate(zip(val_losses, train_losses)):
+        learn_curves(train_loss, val_loss, "loss_fig_"+str(i)+".png")
+
+    
+    # Check accuracy and nonzeros weights in each layer
+    print("--- After retraining ---")
+    _, _ = test_multi(model, test_loader, criterion_list)
+    pruner.prune_rate()
+    return(model)    
+
+
 def iterative_pruning(model, pruner, criterion, data_loaders, setup):
     '''Takes model pruner and list of setup values s.a
         optimizers and learning rates that will be applied 
@@ -239,6 +306,7 @@ def iterative_pruning(model, pruner, criterion, data_loaders, setup):
         model = pruned_model
         pruner.print_mask()
     return()
+
 
 def one_shot_pruning(model, pruner, criterion, pruning_perc,
                      optim_name, lr, epochs, data_loaders):

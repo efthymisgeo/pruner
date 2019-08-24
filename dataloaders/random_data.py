@@ -25,11 +25,16 @@ class CreateRandomDataset():
 		self.type = datatype
 		self.feat_size = feat_size
 		self.samples = n_samples
-		self.classes = n_classes
 		self.val_ratio = val_ratio
 		self.test_ratio = test_ratio
 		self.bs = batch_size
 		self.labels = labels_per_sample
+
+		if isinstance(n_classes, list):
+			self.classes = n_classes
+		else:
+			self.classes = [n_classes 
+							for _ in range(labels_per_sample)]
 
 		self.data_dict = self.generate_dataset()
 		
@@ -57,8 +62,12 @@ class CreateRandomDataset():
 			X, y = self._create_pseudo_dataset()
 		elif self.type == 'multilabel':
 			X, y = self._create_multi_dataset()
+		elif self.type == 'inv hierlabel':
+			X, y = self._create_inv_hier_multi_dataset()
 		elif self.type == 'hierlabel':
 			X, y = self._create_hier_multi_dataset()
+		elif self.type == 'sum_hierlabel':
+			X, y = self._create_sum_multi_dataset()
 		else:
 			raise ValueError('Not an implemented dataset')
 		
@@ -73,6 +82,8 @@ class CreateRandomDataset():
 	def _create_random_dataset(self):
 		X = np.random.rand(self.samples, self.feat_size)
 		y = []
+		# todo
+		# fix for self.class is list case
 		for _ in range(self.samples):
 			y.append(np.random.randint(0,self.classes))
 		return X, y
@@ -80,6 +91,8 @@ class CreateRandomDataset():
 	def _create_pseudo_dataset(self):
 		X = np.random.rand(self.samples, self.feat_size)
 		y = []
+		# TODO 
+		# fix for self.class is list case
 		for i in range(self.samples):
 			label = np.random.randint(0,self.classes)
 			y.append(label)
@@ -93,10 +106,30 @@ class CreateRandomDataset():
 		for i in range(self.samples):
 			label = []
 			for l in range(self.labels):
-				pseudo_label = np.random.randint(0, self.classes)
+				pseudo_label = np.random.randint(0, self.classes[l])
 				label.append(pseudo_label)
 				X[i,l] = pseudo_label
 			y.append(label)	
+
+		return X, y
+
+	def _create_inv_hier_multi_dataset(self):
+		X = np.random.rand(self.samples, self.feat_size)
+		y = []
+		for i in range(self.samples):
+			label = []
+			for l in range(self.labels):
+				pseudo_label = np.random.randint(0, self.classes[l])
+				label.append(pseudo_label)
+
+			new_label = []
+			for l in range(self.labels):
+				if l == 0:
+					new_label.append(sum(label[1:]))
+				else:
+					new_label.append(label[l]) 
+				X[i,l] = new_label[l]
+			y.append(new_label)	
 
 		return X, y
 
@@ -106,18 +139,29 @@ class CreateRandomDataset():
 		for i in range(self.samples):
 			label = []
 			for l in range(self.labels-1):
-				pseudo_label = np.random.randint(0, self.classes)
+				pseudo_label = np.random.randint(0, self.classes[l])
 				label.append(pseudo_label)
-			n_label = len(label)
+				X[i,l] = pseudo_label
+			# last label is the sum of all previous
+			pseudo_label = sum(label)
+			label.append(pseudo_label)
+			X[i, self.labels-1] = pseudo_label
+			y.append(label) 
 
-			new_label = []
+		return X, y
+
+	def _create_sum_multi_dataset(self):
+		X = np.random.rand(self.samples, self.feat_size)
+		y = []
+		for i in range(self.samples):
+			label = []
+			sum = 0
 			for l in range(self.labels):
-				if l == 0:
-					new_label.append(sum(label))
-				else:
-					new_label.append(label[l-1]) 
-				X[i,l] = new_label[l]
-			y.append(label)	
+				pseudo_label = np.random.randint(0, self.labels)
+				sum += pseudo_label
+				label.append(sum)
+				X[i,l] = pseudo_label
+			y.append(label) 
 
 		return X, y
 

@@ -64,8 +64,15 @@ class MultiDNN(nn.Module):
        
         self.config = load_config(config)
         self.in_features = in_features
-        self.out_size = n_classes
         self.n_modules = n_labels
+
+        if isinstance(n_classes, list):
+            self.out_size = n_classes
+        else:
+            self.out_size = [n_classes 
+                            for _ in range(self.n_modules)]
+        
+        
 
         # Configuration parameters for DNN layers
         self.mods = self.config["modules"]
@@ -95,7 +102,7 @@ class MultiDNN(nn.Module):
             dropout = mod["dropout"]
             drop_prob = mod["drop_prob"]
             dnn, clf_layer = self.create_layers(in_features,
-                                                self.out_size,
+                                                self.out_size[i],
                                                 layers, units,
                                                 dropout, drop_prob)
             dnn_list.append(dnn)
@@ -136,15 +143,12 @@ class MultiDNN(nn.Module):
         aux_clf_layers = self.n_modules - 1
 
         #fix me
-        
-        for i, dnn in enumerate(self.module_dict["dnn_list"]):
+        for i, (dnn, clf) in enumerate(zip(self.module_dict["dnn_list"],
+                                           self.module_dict["clf_layers"])):
             y = dnn(x)
-            if i == aux_clf_layers:
-                out.append(y)
-            else:
-                out.append(self.module_dict["clf_layers"][i](y))
-
+            out.append(clf(y))
             x = y
+
         return out 
 
 
@@ -163,8 +167,9 @@ class Pruner():
 class MultiDnnPruner(Pruner):
     def __init__(self, model):
         super(MultiDnnPruner, self).__init__(model)
-        self.model = self.get_prunable(model)
-        print(self.model)
+        self.model = model
+        self.prunable_model = self.get_prunable()
+        print(self.prunable_model)
 
     def pruning(self, pruning_perc):
         self._weight_prune(pruning_perc)
@@ -179,13 +184,13 @@ class MultiDnnPruner(Pruner):
         all_weights = []
         if not self.masks:
             # first time to prune
-            for p in self.model.parameters():
+            for p in self.prunable_model.parameters():
               if len(p.data.size()) != 1:
                   all_weights += list(p.cpu().data.abs().numpy().flatten())
             threshold = np.percentile(np.array(all_weights), pruning_perc)
         else:
             # iterative pruning
-            for p in self.model.parameters():
+            for p in self.prunable_model.parameters():
                 if len(p.data.size()) != 1:
                     weights = p.cpu().data.abs().numpy().flatten()
                     #nonzero_weights = weights[np.nonzero(weights)]
@@ -194,7 +199,7 @@ class MultiDnnPruner(Pruner):
 
         # generate mask
         self.masks = []
-        for p in self.model.parameters():
+        for p in self.prunable_model.parameters():
             if len(p.data.size()) != 1:
                 pruned_inds = p.data.abs() > threshold
                 self.masks.append(pruned_inds.float())
@@ -205,25 +210,74 @@ class MultiDnnPruner(Pruner):
         """Applies mask is every linear layer
         """
         i_fc = 0
-        for p in self.model.modules():
+        for p in self.prunable_model.modules():
             if isinstance(p, MaskedLinear):
                 p.set_mask(self.masks[i_fc])
                 i_fc += 1
         return()
     
-    @staticmethod
-    def get_prunable(model):
-        dnn_model = model.module_dict["dnn_list"]
+    def get_prunable(self):
         seq_model = []
-        for p in dnn_model:
+        for p in self.model.module_dict["dnn_list"]:
             if isinstance(p, nn.Sequential):
                 for q in p.children():
                     seq_model.append(q)
         
-        last_clf = model.module_dict["clf_layers"][-1]
+        last_clf = self.model.module_dict["clf_layers"][-1]
         seq_model.append(last_clf)
 
         return(nn.Sequential(*seq_model))
+    
+    def reconstruct_model(self):
+        counter = 0
+        for p in self.model.module_dict['dnn_list']:
+            if isinstance(p, nn.Sequential):
+                for q in p.children():
+                    q = self.prunable_model[counter]
+                    counter += 1
+        
+        self.model.module_dict['clf_layers'][-1] = \
+            self.prunable_model[-1]
+        
+        return()
+
+    def prune_rate(self, verbose=True):
+        """
+        Print out prune rate for each layer and the whole network
+        """
+        total_nb_param = 0
+        nb_zero_param = 0
+
+        layer_id = 0
+
+        for parameter in self.prunable_model.parameters():
+
+            param_this_layer = 1
+            for dim in parameter.data.size():
+                param_this_layer *= dim
+            total_nb_param += param_this_layer
+
+            # only pruning linear and conv layers
+            if len(parameter.data.size()) != 1:
+                layer_id += 1
+                zero_param_this_layer = \
+                    np.count_nonzero(parameter.cpu().data.numpy()==0)
+                nb_zero_param += zero_param_this_layer
+
+                if verbose:
+                    print("Layer {} | {} layer | {:.2f}% parameters pruned" \
+                        .format(
+                            layer_id,
+                            'Conv' if len(parameter.data.size()) == 4 \
+                                else 'Linear',
+                            100.*zero_param_this_layer/param_this_layer,
+                            ))
+        pruning_perc = 100.*nb_zero_param/total_nb_param
+        
+        if verbose:
+            print("Final pruning rate: {:.2f}%".format(pruning_perc))
+        
+        return pruning_perc    
 
 
     

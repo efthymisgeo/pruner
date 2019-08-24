@@ -1,0 +1,31 @@
+{
+    "modules":
+    {
+        "DNN_1":
+        {
+            "layers": 3,
+            "units": [50, 50, 50],
+            "activation": "relu",
+            "dropout": true,
+            "drop_prob": [0.2, 0.2, 0.2, 0.2, 0.2]
+        },
+
+        "DNN_2":
+        {
+            "layers": 3,
+            "units": [50, 50, 50],
+            "activation": "relu",
+            "dropout": true,
+            "drop_prob": [0.2, 0.2, 0.2]
+        },
+
+        "DNN_3":
+        {
+            "layers": 3,
+            "units": [50, 50, 50],
+            "activation": "relu",
+            "dropout": true,
+            "drop_prob": [0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+       }   
+    }
+}

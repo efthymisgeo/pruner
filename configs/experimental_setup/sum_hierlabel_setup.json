@@ -1,0 +1,26 @@
+{
+	"Train":
+	{
+		"batch_size": 64,
+		"training_epochs": 1500,
+		"learning_rate": 5e-4,
+		"weight_decay": 5e-4,
+		"datatype": "sum_hierlabel",
+		"labels_per_sample": 3,
+		"feature_size": 50,
+		"n_samples": 2000,
+		"n_classes": [3,5,7],
+		"val_ratio": 0.2,
+		"test_ratio": 0.2,
+		"optimizer": "Adam"
+	},
+	"Prune":
+	{
+		"pruning_perc": [75.0, 30.0, 15.0, 15.0],
+		"optimizers": "Adam",
+		"learning_rates": [5e-4, 5e-4, 5e-4, 5e-4],
+		"retrain_epochs": [200, 1000, 2500, 5000],
+		"pruning_rounds": 3
+
+	}
+}
